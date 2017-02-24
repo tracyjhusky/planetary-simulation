@@ -1,20 +1,26 @@
 'use-strict'
 
 //-------------Constants-------------//
-const WIDTH = 800;
-const HEIGHT = 450;
+const WIDTH = 1860;
+const HEIGHT = 930;
 const STARS = 1000;
-const PLANETS = 300;
-const G = 1;
+const PLANETS = 200;
+const G = .005;
+const VEL = .2;
+const MASS = 1000;
+const TRAIL_LENGTH = 100;
+const TRAIL_QUALITY = 4; //Higher is worse.
 
 //-------------Refs-------------//
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d')
 const stars = [];
 const planets = [];
+const trails = [];
 
 //-------------Vars-------------//
 let paused;
+let count = 0;
 
 
 //-------------Control-------------//
@@ -33,6 +39,7 @@ function init() {
 
 function tick() {
   if(!paused) {
+    count++;
     update();
   }
   render();
@@ -40,11 +47,13 @@ function tick() {
 
 function update() {
   applyGravity();
+  updateTrails();
   updatePlanets();
 }
 
 function render() {
   renderBG();
+  renderTrails();
   renderPlanets();
 }
 
@@ -64,11 +73,12 @@ function generateStars() {
 
 function generatePlanets() {
   for(let i = 0; i < PLANETS; i++) {
+    const angle = Math.random() * 2 * Math.PI;
     const planet = new Planet(
       { x: Math.random() * WIDTH, y: Math.random() * HEIGHT },
-      { x: 0, y: 0 },
-      Math.random() * 100 + 20,
-      '#ffffff');
+      { x: Math.sin(angle) * VEL, y: Math.cos(angle) * VEL },
+      Math.random() * (MASS - 20) + 20,
+      'hsl(' + Math.random() * 360 + ', 60%, 70%)');
     planets.push(planet);
   }
 }
@@ -89,6 +99,9 @@ function Planet(pos, vel, mass, color) {
     collidesWith: function(other) {
       return this.distanceTo(other) < this.radius + other.radius;
     },
+    recalcRadius: function() {
+      this.radius = Math.cbrt(this.mass * 3/(4 * Math.PI))
+    }
   };
 }
 
@@ -120,9 +133,25 @@ function updatePlanets() {
     planet.pos.y += planet.vel.y;
     planet.force.x = 0;
     planet.force.y = 0;
+    createTrail(planet);
     const j = collidesWithAny(planet)
     if(j >= 0) {
       impact(i, j);
+      planets.splice(i, 1);
+      i--;
+    }
+  }
+}
+
+function updateTrails() {
+  if(count % TRAIL_QUALITY === 0) {
+    for (let i = 0; i < trails.length; i ++) {
+      trail = trails[i];
+      trail.lifespan--;
+      if (trail.lifespan <= 0) {
+        trails.splice(i, 1);
+        i--;
+      }
     }
   }
 }
@@ -130,8 +159,16 @@ function updatePlanets() {
 function impact(i, j) {
   const p1 = planets[i];
   const p2 = planets[j];
-
-  planets.splice(i, 1);
+  const totalMass = p1.mass + p2.mass;
+  p2.pos.x = p1.pos.x * p1.mass / totalMass + p2.pos.x * p2.mass / totalMass;
+  p2.pos.y = p1.pos.y * p1.mass / totalMass + p2.pos.y * p2.mass / totalMass;
+  p2.vel.x = p1.vel.x * p1.mass / totalMass + p2.vel.x * p2.mass / totalMass;
+  p2.vel.y = p1.vel.y * p1.mass / totalMass + p2.vel.y * p2.mass / totalMass;
+  p2.mass = p1.mass + p2.mass;
+  if (p2.mass < p1.mass) {
+    p2.color = p1.color;
+  }
+  p2.recalcRadius();
 }
 
 function collidesWithAny(planet) {
@@ -146,6 +183,22 @@ function collidesWithAny(planet) {
   return -1;
 }
 
+function createTrail(planet) {
+  if(count % TRAIL_QUALITY === 0) {
+    trails.push({
+      p1: {
+        x: planet.pos.x - (planet.vel.x * TRAIL_QUALITY),
+        y: planet.pos.y - (planet.vel.y * TRAIL_QUALITY),
+      },
+      p2: {
+        x: planet.pos.x,
+        y: planet.pos.y,
+      },
+      color: planet.color,
+      lifespan: TRAIL_LENGTH,
+    });
+  }
+}
 
 //-------------Math-------------//
 function sq(n) {
@@ -174,5 +227,18 @@ function renderPlanets() {
     ctx.arc(planet.pos.x, planet.pos.y, planet.radius, 0, Math.PI * 2);
     ctx.fillStyle = planet.color;
     ctx.fill();
+    ctx.closePath();
+  }
+}
+
+function renderTrails() {
+  for(let i = 0; i < trails.length; i ++) {
+    const trail = trails[i];
+    ctx.beginPath();
+    ctx.moveTo(trail.p1.x, trail.p1.y);
+    ctx.lineTo(trail.p2.x, trail.p2.y);
+    ctx.strokeStyle = trail.color;
+    ctx.stroke();
+    ctx.closePath();
   }
 }
